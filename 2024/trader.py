@@ -1,5 +1,5 @@
-from datamodel import OrderDepth, UserId, TradingState, Order
-from typing import List, Optional, Dict
+from datamodel import OrderDepth, UserId, TradingState, Order, Symbol, Listing, Trade, Observation
+from typing import List, Optional, Dict, Any
 import string
 import math
 import jsonpickle
@@ -135,7 +135,6 @@ class Logger:
 
         return value[:max_length - 3] + "..."
 
-logger = Logger()
 
 class TraderDataDTO:
     def __init__(self):
@@ -144,6 +143,19 @@ class TraderDataDTO:
         self.price_n_minus_3 = None
         self.pred_n = None
         self.pred_n_minus_1 = None
+    
+    def __eq__(self, other):
+        if not isinstance(other, TraderDataDTO):
+            return False
+
+        return self.price_n_minus_1 == other.price_n_minus_1 \
+            and self.price_n_minus_2 == other.price_n_minus_2 \
+            and self.price_n_minus_3 == other.price_n_minus_3 \
+            and self.pred_n == other.pred_n \
+            and self.pred_n_minus_1 == other.pred_n_minus_1
+    
+    def __hash__(self) -> int:
+        return hash((self.price_n_minus_1, self.price_n_minus_2, self.price_n_minus_3, self.pred_n, self.pred_n_minus_1))
 
     def to_json(self):
         return jsonpickle.encode(self)
@@ -164,7 +176,7 @@ class TraderDataDTO:
         self.price_n_minus_2 = self.price_n_minus_1
         self.price_n_minus_1 = price_n
 
-    def accept_pred_n(self, pred_n :float):
+    def accept_pred_n(self, pred_n: float):
         self.pred_n_minus_1 = self.pred_n
         self.pred_n = pred_n
     
@@ -174,28 +186,6 @@ class TraderDataDTO:
             and self.price_n_minus_3 is not None\
             and self.pred_n is not None\
             and self.pred_n_minus_1 is not None
-
-class Trader:
-    def run(self, state: TradingState):
-        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
-        print("traderData: " + state.traderData)
-        print("Observations: " + str(state.observations))
-        trader_data_dto = TraderDataDTO.from_json(state.traderData) 
-        trend_trader = TrendTrader()
-        smm_trader = SMMTrader()
-
-        result = {}
-        
-        for product in state.order_depths:
-            if product == 'STARFRUIT':
-                result[product], prop = trend_trader.run(product, state, trader_data_dto)
-            if product == 'AMETHYSTS':
-                result[product], prop = smm_trader.run(state, trader_data_dto)
-    
-        conversions = 1
-        trader_data = trader_data_dto.to_json()
-        logger.flush(state, result, conversions, trader_data)
-        return result, conversions, trader_data
 
 class TrendTrader:
     def max_vol_quote(self, order_dict, buy):
@@ -413,4 +403,27 @@ class SMMTrader:
     
         conversions = 1
         return result, conversions
+
+logger = Logger()
     
+class Trader:
+    def run(self, state: TradingState):
+        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
+        print("traderData: " + state.traderData)
+        print("Observations: " + str(state.observations))
+        trader_data_dto = TraderDataDTO.from_json(state.traderData) 
+        trend_trader = TrendTrader()
+        smm_trader = SMMTrader()
+
+        result = {}
+        
+        for product in state.order_depths:
+            if product == 'STARFRUIT':
+                result[product], prop = trend_trader.run(product, state, trader_data_dto)
+            if product == 'AMETHYSTS':
+                result[product], prop = smm_trader.run(state, trader_data_dto)
+    
+        conversions = 1
+        trader_data = trader_data_dto.to_json()
+        logger.flush(state, result, conversions, trader_data)
+        return result, conversions, trader_data
