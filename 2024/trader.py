@@ -1,12 +1,11 @@
 from datamodel import OrderDepth, UserId, TradingState, Order
-from typing import List, Optional
+from typing import List, Optional, Dict
 import string
 import math
 import jsonpickle
 import numpy as np
-from dataclasses import dataclass
 
-def market_buy(product, sell_orders, acceptable_price, curr_pos):
+def market_buy(product: string, sell_orders: Dict[int, int], acceptable_price, curr_pos):
         """Modularizing market buy order"""
         buys = []
         order_for = 0
@@ -19,7 +18,7 @@ def market_buy(product, sell_orders, acceptable_price, curr_pos):
                     buys.append(Order(product, best_ask, order_for))
         return order_for, buys
 
-def market_sell(product, buy_orders, acceptable_price, curr_pos):
+def market_sell(product: string, buy_orders: Dict[int, int], acceptable_price, curr_pos):
     """Modularizing market sell orders"""
     sells = []
     order_for = 0
@@ -138,22 +137,13 @@ class Logger:
 
 logger = Logger()
 
-
-@dataclass
 class TraderDataDTO:
-    """The last price seen (NOT the current tick)"""
-    price_n_minus_1: Optional[float] = None
-    """The second last price seen"""
-    price_n_minus_2: Optional[float] = None
-    """The third last price seen"""
-    price_n_minus_3: Optional[float] = None
-
-    pred_n: Optional[float] = None
-
-    pred_n_minus_1: Optional[float] = None
-
-    #price_n_minus_1_error: Optional[float] = None
-    #price_n_minus_2_error: Optional[float] = None
+    def __init__(self):
+        self.price_n_minus_1 = None
+        self.price_n_minus_2 = None
+        self.price_n_minus_3 = None
+        self.pred_n = None
+        self.pred_n_minus_1 = None
 
     def to_json(self):
         return jsonpickle.encode(self)
@@ -175,9 +165,8 @@ class TraderDataDTO:
         self.price_n_minus_1 = price_n
 
     def accept_pred_n(self, pred_n :float):
-        self_pred_n_minus_1 = self.pred_n
+        self.pred_n_minus_1 = self.pred_n
         self.pred_n = pred_n
-    
     
     def is_initialized(self):
         return self.price_n_minus_1 is not None \
