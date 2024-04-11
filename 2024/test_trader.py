@@ -1,7 +1,7 @@
 import unittest
 from trend import TraderDataDTO
 
-class TestTrend(unittest.TestCase):
+class TestTrader(unittest.TestCase):
     def test_TraderData_parses_default_instance_when_string_is_None(self):
         td = TraderDataDTO.from_json(None)
         self.assertEqual(td, TraderDataDTO())
