@@ -146,20 +146,21 @@ class Trader:
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
         trader_data_dto = TraderDataDTO.from_json(state.traderData) 
+        trend_trader = TrendTrader()
 
         result = {}
         
         for product in state.order_depths:
-            if product=='STARFRUIT':
-                result[product], prop = self.trend(product, state)
+            if product == 'STARFRUIT':
+                result[product], prop = trend_trader.trade(product, state)
     
         conversions = 1
         trader_data = trader_data_dto.to_json()
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
 
-
-    def trend(self, product, state: TradingState, traderData: TraderDataDTO):
+class TrendTrader:
+    def trade(self, product, state: TradingState, traderData: TraderDataDTO):
         buy_orders = state.order_depths[product].buy_orders
         sell_orders = state.order_depths[product].sell_orders
         _, best_bid = self.max_vol_quote(buy_orders, 1)
