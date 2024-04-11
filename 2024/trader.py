@@ -5,7 +5,33 @@ import math
 import jsonpickle
 import numpy as np
 from dataclasses import dataclass
-from logger import Logger
+
+def market_buy(product, sell_orders, acceptable_price, curr_pos):
+        """Modularizing market buy order"""
+        buys = []
+        order_for = 0
+        if len(sell_orders) != 0:
+                best_ask, best_ask_amount = list(sell_orders.items())[0]
+                if int(best_ask) <= acceptable_price:
+                    order_for = min(-best_ask_amount, 20-curr_pos)
+                    print("BUY", str(order_for) + "x", best_ask)
+                    #logger.print("BUY", str(order_for) + "x", best_ask)
+                    buys.append(Order(product, best_ask, order_for))
+        return order_for, buys
+
+def market_sell(product, buy_orders, acceptable_price, curr_pos):
+    """Modularizing market sell orders"""
+    sells = []
+    order_for = 0
+    if len(buy_orders) != 0:
+            best_bid, best_bid_amount = list(buy_orders.items())[0]
+            if int(best_bid) >= acceptable_price:
+                # Similar situation with sell orders
+                order_for = max(-best_bid_amount, -20-curr_pos)
+                print("SELL", str(order_for) + "x", best_bid)
+                #logger.print("SELL", str(-order_for) + "x", best_bid)
+                sells.append(Order(product, best_bid, order_for))
+    return order_for, sells
 
 class Logger:
     def __init__(self) -> None:
@@ -133,7 +159,7 @@ class TraderDataDTO:
         return jsonpickle.encode(self)
 
     @staticmethod
-    def from_json(json_string):
+    def from_json(json_string: string):
         if json_string is None or json_string == "":
             return TraderDataDTO()
 
@@ -159,8 +185,6 @@ class TraderDataDTO:
             and self.price_n_minus_3 is not None\
             and self.pred_n is not None\
             and self.pred_n_minus_1 is not None
-
-INITIAL_TRADER_DATA = TraderDataDTO()
 
 class Trader:
     def run(self, state: TradingState):
@@ -295,10 +319,6 @@ class TrendTrader:
         return orders, s.to_json()
         #result[product] = orders
 
-    
-    
-    
-
 class SMMTrader:
     def max_vol_quote(self, order_dict, buy):
         """The highest vol is indicative of actual market sentiment;
@@ -389,61 +409,6 @@ class SMMTrader:
 
         return orders
     
-
-    # def smm_vol(self, product, state: TradingState, acc_bid, acc_ask, sds):
-
-    #     buy_orders, sell_orders = state.order_depths[product].buy_orders , state.order_depths[product].sell_orders
-    #     demand, best_bid = self.max_vol_quote(buy_orders, 1)
-    #     supply, best_ask = self.max_vol_quote(sell_orders, 0)
-    #     mid = (best_ask+best_bid)/2
-    #     curr_pos = state.position.get(product, 0)
-    #     prev_state = jsonpickle.decode(state.traderData) if state.traderData!=''else None
-    #     orders = []
-    #     "MARKET TAKING"
-    #     new_pos, buys = self.market_buy(product, sell_orders, acc_bid, curr_pos)
-    #     curr_pos += new_pos
-    #     new_pos, sells = self.market_sell(product, buy_orders, acc_ask, curr_pos)
-    #     curr_pos += new_pos
-    #     orders.extend(buys+sells)
-
-    #     "MARKET MAKING"
-    #     curr_spread = best_ask - best_bid
-    #     assert curr_spread > 0
-    #     sig_level = 1.5
-    #     ratio = None
-    #     if prev_state is not None:
-    #         ema = prev_state['ema']
-    #         ratio = mid/ema
-    #         alpha = prev_state['alpha']
-            
-    #     if demand > sig_level * supply:
-    #             ask = best_ask
-    #             bid = best_bid + 1
-    #     if supply > sig_level * demand:
-    #         ask = best_ask - 1
-    #         bid = best_bid
-    #     else:
-    #         ask = best_ask-1
-    #         bid = best_bid+1
-
-    #     if ratio is None or (sds[1]<=ratio<=sds[0]):   
-    #         if 10 < curr_pos <= 20:
-    #             orders.append(Order(product, ask-1, -curr_pos))
-    #         if 0 < curr_pos <= 10:
-    #             orders.append(Order(product, ask, -curr_pos))
-    #         if -10 <= curr_pos < 0:
-    #             orders.append(Order(product, bid, -curr_pos))
-    #         if -20 <= curr_pos < -10:
-    #             orders.append(Order(product, bid+1, -curr_pos))
-        
-    #     elif ratio is not None and (ratio < sds[1] or sds[0] < ratio):
-    #         if curr_pos > 0:
-    #             orders.append(Order(product, ask+2, -curr_pos))
-    #         if curr_pos < 0:
-    #             orders.append(Order(product, bid-2, -curr_pos))
-    #     propagate = {'ema': alpha*mid + (1-alpha)*ema, 'alpha': alpha}
-    #     return orders, propagate
-    
     def run(self, state: TradingState, traderData: TraderDataDTO):
         my_bids = {'AMETHYSTS':10000, 'STARFRUIT':0}
         my_asks = {'AMETHYSTS':10000, 'STARFRUIT':0}
@@ -460,30 +425,3 @@ class SMMTrader:
         conversions = 1
         return result, conversions
     
-
-def market_buy(product, sell_orders, acceptable_price, curr_pos):
-        """Modularizing market buy order"""
-        buys = []
-        order_for = 0
-        if len(sell_orders) != 0:
-                best_ask, best_ask_amount = list(sell_orders.items())[0]
-                if int(best_ask) <= acceptable_price:
-                    order_for = min(-best_ask_amount, 20-curr_pos)
-                    print("BUY", str(order_for) + "x", best_ask)
-                    #logger.print("BUY", str(order_for) + "x", best_ask)
-                    buys.append(Order(product, best_ask, order_for))
-        return order_for, buys
-
-def market_sell(product, buy_orders, acceptable_price, curr_pos):
-    """Modularizing market sell orders"""
-    sells = []
-    order_for = 0
-    if len(buy_orders) != 0:
-            best_bid, best_bid_amount = list(buy_orders.items())[0]
-            if int(best_bid) >= acceptable_price:
-                # Similar situation with sell orders
-                order_for = max(-best_bid_amount, -20-curr_pos)
-                print("SELL", str(order_for) + "x", best_bid)
-                #logger.print("SELL", str(-order_for) + "x", best_bid)
-                sells.append(Order(product, best_bid, order_for))
-    return order_for, sells
