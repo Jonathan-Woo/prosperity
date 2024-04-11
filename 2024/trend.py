@@ -7,6 +7,109 @@ import numpy as np
 from dataclasses import dataclass
 from logger import Logger
 
+class Logger:
+    def __init__(self) -> None:
+        self.logs = ""
+        self.max_log_length = 3750
+
+    def print(self, *objects: Any, sep: str = " ", end: str = "\n") -> None:
+        self.logs += sep.join(map(str, objects)) + end
+
+    def flush(self, state: TradingState, orders: dict[Symbol, list[Order]], conversions: int, trader_data: str) -> None:
+        base_length = len(self.to_json([
+            self.compress_state(state, ""),
+            self.compress_orders(orders),
+            conversions,
+            "",
+            "",
+        ]))
+
+        # We truncate state.traderData, trader_data, and self.logs to the same max. length to fit the log limit
+        max_item_length = (self.max_log_length - base_length) // 3
+
+        print(self.to_json([
+            self.compress_state(state, self.truncate(state.traderData, max_item_length)),
+            self.compress_orders(orders),
+            conversions,
+            self.truncate(trader_data, max_item_length),
+            self.truncate(self.logs, max_item_length),
+        ]))
+
+        self.logs = ""
+
+    def compress_state(self, state: TradingState, trader_data: str) -> list[Any]:
+        return [
+            state.timestamp,
+            trader_data,
+            self.compress_listings(state.listings),
+            self.compress_order_depths(state.order_depths),
+            self.compress_trades(state.own_trades),
+            self.compress_trades(state.market_trades),
+            state.position,
+            self.compress_observations(state.observations),
+        ]
+
+    def compress_listings(self, listings: dict[Symbol, Listing]) -> list[list[Any]]:
+        compressed = []
+        for listing in listings.values():
+            compressed.append([listing["symbol"], listing["product"], listing["denomination"]])
+
+        return compressed
+
+    def compress_order_depths(self, order_depths: dict[Symbol, OrderDepth]) -> dict[Symbol, list[Any]]:
+        compressed = {}
+        for symbol, order_depth in order_depths.items():
+            compressed[symbol] = [order_depth.buy_orders, order_depth.sell_orders]
+
+        return compressed
+
+    def compress_trades(self, trades: dict[Symbol, list[Trade]]) -> list[list[Any]]:
+        compressed = []
+        for arr in trades.values():
+            for trade in arr:
+                compressed.append([
+                    trade.symbol,
+                    trade.price,
+                    trade.quantity,
+                    trade.buyer,
+                    trade.seller,
+                    trade.timestamp,
+                ])
+
+        return compressed
+
+    def compress_observations(self, observations: Observation) -> list[Any]:
+        conversion_observations = {}
+        for product, observation in observations.conversionObservations.items():
+            conversion_observations[product] = [
+                observation.bidPrice,
+                observation.askPrice,
+                observation.transportFees,
+                observation.exportTariff,
+                observation.importTariff,
+                observation.sunlight,
+                observation.humidity,
+            ]
+
+        return [observations.plainValueObservations, conversion_observations]
+
+    def compress_orders(self, orders: dict[Symbol, list[Order]]) -> list[list[Any]]:
+        compressed = []
+        for arr in orders.values():
+            for order in arr:
+                compressed.append([order.symbol, order.price, order.quantity])
+
+        return compressed
+
+    def to_json(self, value: Any) -> str:
+        return json.dumps(value, cls=ProsperityEncoder, separators=(",", ":"))
+
+    def truncate(self, value: str, max_length: int) -> str:
+        if len(value) <= max_length:
+            return value
+
+        return value[:max_length - 3] + "..."
+
 logger = Logger()
 
 @dataclass
@@ -37,27 +140,24 @@ class TraderDataDTO:
 
         return jsonpickle.decode(json_string)
 
-class Trend:
-    def max_vol_quote(self, order_dict, buy):
-        """The highest vol is indicative of actual market sentiment;
-        this is what we tried to do earlier with the vwap"""
-        best_quote, best_vol = 0, -float('inf')
-        total_vol = 0
-        for item in order_dict:
-            vol = order_dict[item]
-            if buy==0:
-                vol *= -1
-            total_vol += vol
-            if vol > best_vol:
-                best_vol, best_quote = vol, item
-        return total_vol, best_quote
+class Trader:
+    def run(self, state: TradingState):
+        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
+        print("traderData: " + state.traderData)
+        print("Observations: " + str(state.observations))
+        trader_data_dto = TraderDataDTO.from_json(state.traderData) 
 
-    def lin_reg(self, cache):
-        #may need tweaking; highest for most recent, but not too low for the past
-        weights = np.array([0.5, 0.3, 0.1, 0.1])
-        intercept =  0 #4.3920470091215975
-        return weights@np.array(cache)+intercept
+        result = {}
+        
+        for product in state.order_depths:
+            if product=='STARFRUIT':
+                result[product], prop = self.trend(product, state)
     
+        conversions = 1
+        trader_data = trader_data_dto.to_json()
+        logger.flush(state, result, conversions, trader_data)
+        return result, conversions, trader_data
+
 
     def trend(self, product, state: TradingState, traderData: TraderDataDTO):
         buy_orders = state.order_depths[product].buy_orders
@@ -135,24 +235,25 @@ class Trend:
         return orders, {'cache': cache, 'ema_fast': ema_fast, 'ema_slow': ema_slow}
         #result[product] = orders
 
-##############################################################################################
-    
-    def run(self, state: TradingState):
-        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
-        print("traderData: " + state.traderData)
-        print("Observations: " + str(state.observations))
-        trader_data_dto = TraderDataDTO.from_json(state.traderData) 
+    def max_vol_quote(self, order_dict, buy):
+        """The highest vol is indicative of actual market sentiment;
+        this is what we tried to do earlier with the vwap"""
+        best_quote, best_vol = 0, -float('inf')
+        total_vol = 0
+        for item in order_dict:
+            vol = order_dict[item]
+            if buy==0:
+                vol *= -1
+            total_vol += vol
+            if vol > best_vol:
+                best_vol, best_quote = vol, item
+        return total_vol, best_quote
 
-        result = {}
-        
-        for product in state.order_depths:
-            if product=='STARFRUIT':
-                result[product], prop = self.trend(product, state)
-    
-        conversions = 1
-        trader_data = trader_data_dto.to_json()
-        logger.flush(state, result, conversions, trader_data)
-        return result, conversions, trader_data
+    def lin_reg(self, cache):
+        #may need tweaking; highest for most recent, but not too low for the past
+        weights = np.array([0.5, 0.3, 0.1, 0.1])
+        intercept =  0 #4.3920470091215975
+        return weights@np.array(cache)+intercept
     
 #############################################################################################
     def market_buy(self, product, sell_orders, acceptable_price, curr_pos):
