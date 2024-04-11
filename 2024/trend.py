@@ -4,8 +4,9 @@ import string
 import math
 import jsonpickle
 import numpy as np
+from dataclasses import dataclass
 
-class Trader:
+class Trend:
     def max_vol_quote(self, order_dict, buy):
         """The highest vol is indicative of actual market sentiment;
         this is what we tried to do earlier with the vwap"""
@@ -145,3 +146,23 @@ class Trader:
                     #logger.print("SELL", str(-order_for) + "x", best_bid)
                     sells.append(Order(product, best_bid, order_for))
         return order_for, sells
+
+
+@dataclass
+class TraderData:
+    # The last price seen (NOT the current tick)
+    price_n_minus_1 = None
+    # The second last price seen
+    price_n_minus_2 = None
+
+    price_n_minus_1_error = None
+    price_n_minus_2_error = None
+
+    def to_json(self):
+        return jsonpickle.encode(self)
+
+    @staticmethod
+    def from_json(json_string):
+        return jsonpickle.decode(json_string)
+
+INITIAL_TRADER_DATA = TraderData()
