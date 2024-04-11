@@ -5,6 +5,37 @@ import math
 import jsonpickle
 import numpy as np
 from dataclasses import dataclass
+from logger import Logger
+
+logger = Logger()
+
+@dataclass
+class TraderDataDTO:
+    """The last price seen (NOT the current tick)"""
+    price_n_minus_1: Optional[float] = None
+    """The second last price seen"""
+    price_n_minus_2: Optional[float] = None
+
+    price_n_minus_1_error: Optional[float] = None
+    price_n_minus_2_error: Optional[float] = None
+
+    def accept_price_n(self, price_n: float):
+        """
+        Analagous to the "accept" method on a DDSketch quantile estimator (https://github.com/DataDog/sketches-java)
+        this "loads" the latest price into the trader data, and evicts the oldest
+        """
+        self.price_n_minus_2 = self.price_n_minus_1
+        self.price_n_minus_1 = price_n
+
+    def to_json(self):
+        return jsonpickle.encode(self)
+
+    @staticmethod
+    def from_json(json_string):
+        if json_string is None or json_string == "":
+            return TraderDataDTO()
+
+        return jsonpickle.decode(json_string)
 
 class Trend:
     def max_vol_quote(self, order_dict, buy):
@@ -28,7 +59,7 @@ class Trend:
         return weights@np.array(cache)+intercept
     
 
-    def trend(self, product, state):
+    def trend(self, product, state: TradingState, traderData: TraderDataDTO):
         buy_orders = state.order_depths[product].buy_orders
         sell_orders = state.order_depths[product].sell_orders
         _, best_bid = self.max_vol_quote(buy_orders, 1)
@@ -43,6 +74,8 @@ class Trend:
         ratio, ema_fast, ema_slow = 0, 0, 0
         acc_bid = {'STARFRUIT': -1e9}
         acc_ask = {'STARFRUIT': 1e9}
+
+        traderData.accept_price_n(curr_mid)
 
         acceptable_price = 1e9
         if state.traderData=='':
@@ -108,7 +141,7 @@ class Trend:
         # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
-        traderDataDto = TraderDataDTO.from_json(state.traderData) 
+        trader_data_dto = TraderDataDTO.from_json(state.traderData) 
 
         result = {}
         
@@ -117,7 +150,9 @@ class Trend:
                 result[product], prop = self.trend(product, state)
     
         conversions = 1
-        return result, conversions,  traderDataDto.to_json()
+        trader_data = trader_data_dto.to_json()
+        logger.flush(state, result, conversions, trader_data)
+        return result, conversions, trader_data
     
 #############################################################################################
     def market_buy(self, product, sell_orders, acceptable_price, curr_pos):
@@ -147,23 +182,3 @@ class Trend:
                     sells.append(Order(product, best_bid, order_for))
         return order_for, sells
 
-
-@dataclass
-class TraderDataDTO:
-    # The last price seen (NOT the current tick)
-    price_n_minus_1: Optional[float] = None
-    # The second last price seen
-    price_n_minus_2: Optional[float] = None
-
-    price_n_minus_1_error: Optional[float] = None
-    price_n_minus_2_error: Optional[float] = None
-
-    def to_json(self):
-        return jsonpickle.encode(self)
-
-    @staticmethod
-    def from_json(json_string):
-        if json_string is None or json_string == "":
-            return TraderDataDTO()
-
-        return jsonpickle.decode(json_string)
