@@ -139,14 +139,19 @@ class TraderDataDTO:
 
         return jsonpickle.decode(json_string)
     
-    def accept(self, new:float):
+    def accept_price_n(self, price_n :float):
         """
         Analagous to the "accept" method on a DDSketch quantile estimator (https://github.com/DataDog/sketches-java)
         this "loads" the latest price into the trader data, and evicts the oldest
         """
         self.price_n_minus_3 = self.price_n_minus_2
         self.price_n_minus_2 = self.price_n_minus_1
-        self.price_n_minus_1 = new
+        self.price_n_minus_1 = price_n
+
+    def accept_pred_n(self, pred_n :float):
+        self_pred_n_minus_1 = self.pred_n
+        self.pred_n = pred_n
+    
     
     def is_initialized(self):
         return self.price_n_minus_1 is not None \
@@ -225,41 +230,35 @@ class TrendTrader:
         if not s.is_initialized():
             #try versions with both waiting for pred, and not waiting
             if state.timestamp/100<=2:
-                s.accept(curr_mid)
+                s.accept_price_n(curr_mid)
 
             if state.timestamp/100==3:
-                pred = self.lin_reg([s.price_n_minus_1-s.price_n_minus_2,\
+                pred_n = self.lin_reg([s.price_n_minus_1-s.price_n_minus_2,\
                                      s.price_n_minus_2-s.price_n_minus_3, 
                                      0, 0]) + s.price_n_minus_1
-                s.pred = pred
-                s.accept(curr_mid)
+                s.accept_price_n(curr_mid)
+                s.accept_pred_n(pred_n)
 
             if state.timestamp/100==4:
-                pred = self.lin_reg([s.price_n_minus_1-s.price_n_minus_2, \
+                pred_n = self.lin_reg([s.price_n_minus_1-s.price_n_minus_2, \
                                      s.price_n_minus_2-s.price_n_minus_3, 
                                      curr_mid-s.pred, 0]) + s.price_n_minus_1    
-                s.pred_n_minus_1 = s.pred
-                s.pred = pred
-                s.accept(curr_mid)
-
+                s.accept_price_n(curr_mid)
+                s.accept_pred_n(pred_n)
 
         if s.is_initialized():
             acceptable_price = self.lin_reg(\
                   [s.price_n_minus_1-s.price_n_minus_2, \
                    s.price_n_minus_2-s.price_n_minus_3, \
-                    curr_mid - s.pred, s.pred - s.pred_n_minus_1])
-            s.pred_n_minus_1 = s.pred
-            s.pred = acceptable_price
-            s.accept(curr_mid)
+                    curr_mid - s.pred_n, s.pred_n - s.pred_n_minus_1])
+            s.accept_price_n(curr_mid)
+            s.accept_pred_n(acceptable_price)
             
-
             acc_ask[product] = acceptable_price + 1
             acc_bid[product] = acceptable_price - 1
-
         
         print("Acceptable price : " + str(acceptable_price))
         print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-
 
 
         """Market Taking"""
