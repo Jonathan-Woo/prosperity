@@ -1,5 +1,6 @@
 from datamodel import OrderDepth, UserId, TradingState, Order
-from typing import List
+from typing import List, Optional 
+from dataclasses import dataclass
 import string
 import math
 import jsonpickle
@@ -22,9 +23,9 @@ class Trader:
 
     def lin_reg(self, cache):
         #may need tweaking; highest for most recent, but not too low for the past
-        weights = np.array([0.5, 0.3, 0.1, 0.1])
-        intercept =  0 #4.3920470091215975
-        return weights@np.array(cache)+intercept
+        lag_wts = np.array([-0.6036, 0.0006, -0.1043, -0.4289])
+        #intercept =  0 #4.3920470091215975
+        return lag_wts@np.array(cache)
     
 
     def trend(self, product, state):
@@ -44,36 +45,56 @@ class Trader:
         acc_ask = {'STARFRUIT': 1e9}
 
         acceptable_price = 1e9
-        if state.traderData=='':
-            cache = [curr_mid]
-            ema_fast = ema_slow = curr_mid
-            ratio = 1.0
-        if state.traderData!='':
-            prev = jsonpickle.decode(state.traderData)
-            cache = prev['cache'].copy()
-            if len(prev['cache'])==4:    
-                acceptable_price = int(round(self.lin_reg(cache)))
-                acc_bid[product] = acceptable_price - 1
-                acc_ask[product] = acceptable_price + 1
-                cache.pop(0)
-            cache.append(curr_mid)
+        prev = TraderData(state.traderData)
+        #to_prop = TraderData()
 
-            ema_fast = 0.4 * prev['ema_fast'] + 0.6 * curr_mid
-            ema_slow = 0.9 * prev['ema_slow'] + 0.1 * curr_mid
-            ratio = ema_fast/ema_slow
+        if not prev.is_initialized():
+            #try versions with both waiting for pred, and not waiting
+            if state.timestamp/100<=2:
+                prev.accept(curr_mid)
+
+            if state.timestamp/100==3:
+                pred = self.lin_reg([prev.price_n_minus_1-prev.price_n_minus_2,\
+                                     prev.price_n_minus_2-prev.price_n_minus_3, 
+                                     0, 0]) + prev.price_n_minus_1
+                prev.pred = pred
+                prev.accept(curr_mid)
+
+            if state.timestamp/100==4:
+                pred = self.lin_reg([prev.price_n_minus_1-prev.price_n_minus_2, \
+                                     prev.price_n_minus_2-prev.price_n_minus_3, 
+                                     curr_mid-prev.pred, 0]) + prev.price_n_minus_1    
+                prev.pred_n_minus_1 = prev.pred
+                prev.pred = pred
+                prev.accept(curr_mid)
+
+
+        if prev.is_initialized():
+            acceptable_price = self.lin_reg(\
+                  [prev.price_n_minus_1-prev.price_n_minus_2, \
+                   prev.price_n_minus_2-prev.price_n_minus_3, \
+                    curr_mid - prev.pred, prev.pred - prev.pred_n_minus_1])
+            prev.pred_n_minus_1 = prev.pred
+            prev.pred = acceptable_price
+            prev.accept(curr_mid)
             
+
+            acc_ask[product] = acceptable_price + 1
+            acc_bid[product] = acceptable_price - 1
+
         
         print("Acceptable price : " + str(acceptable_price))
         print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-        print('Ratio:' +str(ratio))
+
 
 
         """Market Taking"""
-        order_for, buys = self.market_buy(product, order_depth.sell_orders, acc_bid[product], curr_pos)
-        curr_pos += order_for
-        order_for, sells = self.market_sell(product, order_depth.buy_orders, acc_ask[product], curr_pos)
-        curr_pos += order_for
-        orders.extend(buys+sells)
+        if not prev.is_initialized():
+            order_for, buys = self.market_buy(product, order_depth.sell_orders, acc_bid[product], curr_pos)
+            curr_pos += order_for
+            order_for, sells = self.market_sell(product, order_depth.buy_orders, acc_ask[product], curr_pos)
+            curr_pos += order_for
+            orders.extend(buys+sells)
 
 
         """Market Making"""
@@ -98,7 +119,7 @@ class Trader:
             orders.append(Order(product, ask, -20-curr_pos))
             #orders.append(Order(product, bid, -round(0.25*(-20-curr_pos))))
 
-        return orders, {'cache': cache, 'ema_fast': ema_fast, 'ema_slow': ema_slow}
+        return orders, prev.to_json()
         #result[product] = orders
 
 ##############################################################################################
@@ -145,3 +166,38 @@ class Trader:
                     #logger.print("SELL", str(-order_for) + "x", best_bid)
                     sells.append(Order(product, best_bid, order_for))
         return order_for, sells
+    
+
+@dataclass
+class TraderData:
+    # The last price seen (NOT the current tick)
+    price_n_minus_1: Optional[float] = None
+    # The second last price seen
+    price_n_minus_2: Optional[float] = None
+    price_n_minus_3: Optional[float] = None
+
+    pred: Optional[float] = None
+
+    pred_n_minus_1: Optional[float] = None
+
+    #price_n_minus_1_error: Optional[float] = None
+    #price_n_minus_2_error: Optional[float] = None
+
+    def to_json(self):
+        return jsonpickle.encode(self)
+
+    @staticmethod
+    def from_json(json_string):
+        return jsonpickle.decode(json_string)
+    
+    def accept(self, new:float):
+        self.price_n_minus_3 = self.price_n_minus_2
+        self.price_n_minus_2 = self.price_n_minus_1
+        self.price_n_minus_1 = new
+    
+    def is_initialized(self):
+        return self.price_n_minus_1 is not None \
+            and self.price_n_minus_2 is not None\
+            and self.pred is not None and self.pred_n_minus_1 is not None
+
+INITIAL_TRADER_DATA = TraderData()
