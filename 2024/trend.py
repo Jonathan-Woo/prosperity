@@ -257,17 +257,17 @@ class Trader:
     
 #############################################################################################
     def market_buy(self, product, sell_orders, acceptable_price, curr_pos):
-            """Modularizing market buy order"""
-            buys = []
-            order_for = 0
-            if len(sell_orders) != 0:
-                    best_ask, best_ask_amount = list(sell_orders.items())[0]
-                    if int(best_ask) <= acceptable_price:
-                        order_for = min(-best_ask_amount, 20-curr_pos)
-                        print("BUY", str(order_for) + "x", best_ask)
-                        #logger.print("BUY", str(order_for) + "x", best_ask)
-                        buys.append(Order(product, best_ask, order_for))
-            return order_for, buys
+        """Modularizing market buy order"""
+        buys = []
+        order_for = 0
+        if len(sell_orders) != 0:
+                best_ask, best_ask_amount = list(sell_orders.items())[0]
+                if int(best_ask) <= acceptable_price:
+                    order_for = min(-best_ask_amount, 20-curr_pos)
+                    print("BUY", str(order_for) + "x", best_ask)
+                    #logger.print("BUY", str(order_for) + "x", best_ask)
+                    buys.append(Order(product, best_ask, order_for))
+        return order_for, buys
 
     def market_sell(self, product, buy_orders, acceptable_price, curr_pos):
         """Modularizing market sell orders"""
