@@ -1,5 +1,5 @@
 from datamodel import OrderDepth, UserId, TradingState, Order
-from typing import List
+from typing import List, Optional
 import string
 import math
 import jsonpickle
@@ -108,16 +108,16 @@ class Trend:
         # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
         print("traderData: " + state.traderData)
         print("Observations: " + str(state.observations))
+        traderDataDto = TraderDataDTO.from_json(state.traderData) 
+
         result = {}
         
         for product in state.order_depths:
             if product=='STARFRUIT':
                 result[product], prop = self.trend(product, state)
     
-        traderData = jsonpickle.encode(prop) 
-        
         conversions = 1
-        return result, conversions, traderData
+        return result, conversions,  traderDataDto.to_json()
     
 #############################################################################################
     def market_buy(self, product, sell_orders, acceptable_price, curr_pos):
@@ -149,20 +149,21 @@ class Trend:
 
 
 @dataclass
-class TraderData:
+class TraderDataDTO:
     # The last price seen (NOT the current tick)
-    price_n_minus_1 = None
+    price_n_minus_1: Optional[float] = None
     # The second last price seen
-    price_n_minus_2 = None
+    price_n_minus_2: Optional[float] = None
 
-    price_n_minus_1_error = None
-    price_n_minus_2_error = None
+    price_n_minus_1_error: Optional[float] = None
+    price_n_minus_2_error: Optional[float] = None
 
     def to_json(self):
         return jsonpickle.encode(self)
 
     @staticmethod
     def from_json(json_string):
-        return jsonpickle.decode(json_string)
+        if json_string is None or json_string == "":
+            return TraderDataDTO()
 
-INITIAL_TRADER_DATA = TraderData()
+        return jsonpickle.decode(json_string)
