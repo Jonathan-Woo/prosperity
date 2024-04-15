@@ -138,24 +138,16 @@ class Logger:
 
 class TraderDataDTO:
     def __init__(self):
-        self.price_n_minus_1 = None
-        self.price_n_minus_2 = None
-        self.price_n_minus_3 = None
-        self.pred_n = None
-        self.pred_n_minus_1 = None
-    
-    def __eq__(self, other):
-        if not isinstance(other, TraderDataDTO):
-            return False
+        self._prices = {}
 
-        return self.price_n_minus_1 == other.price_n_minus_1 \
-            and self.price_n_minus_2 == other.price_n_minus_2 \
-            and self.price_n_minus_3 == other.price_n_minus_3 \
-            and self.pred_n == other.pred_n \
-            and self.pred_n_minus_1 == other.pred_n_minus_1
-    
-    def __hash__(self) -> int:
-        return hash((self.price_n_minus_1, self.price_n_minus_2, self.price_n_minus_3, self.pred_n, self.pred_n_minus_1))
+    def accept_product_price(self, symbol, price):
+        if symbol not in self._prices:
+            self._prices[symbol] = []
+
+        self._prices[symbol].append(price)
+
+    def get_product_price(self, symbol):
+        return self._prices[symbol]
 
     def to_json(self):
         return jsonpickle.encode(self)
@@ -166,26 +158,6 @@ class TraderDataDTO:
             return TraderDataDTO()
 
         return jsonpickle.decode(json_string)
-    
-    def accept_price_n(self, price_n :float):
-        """
-        Analagous to the "accept" method on a DDSketch quantile estimator (https://github.com/DataDog/sketches-java)
-        this "loads" the latest price into the trader data, and evicts the oldest
-        """
-        self.price_n_minus_3 = self.price_n_minus_2
-        self.price_n_minus_2 = self.price_n_minus_1
-        self.price_n_minus_1 = price_n
-
-    def accept_pred_n(self, pred_n: float):
-        self.pred_n_minus_1 = self.pred_n
-        self.pred_n = pred_n
-    
-    def is_initialized(self):
-        return self.price_n_minus_1 is not None \
-            and self.price_n_minus_2 is not None\
-            and self.price_n_minus_3 is not None\
-            and self.pred_n is not None\
-            and self.pred_n_minus_1 is not None
 
 class TrendTrader:
     def max_vol_quote(self, order_dict, buy):
@@ -245,7 +217,7 @@ class TrendTrader:
             if state.timestamp/100==4:
                 pred_n = self.lin_reg([s.price_n_minus_1-s.price_n_minus_2, \
                                      s.price_n_minus_2-s.price_n_minus_3, 
-                                     curr_mid-s.pred, 0]) + s.price_n_minus_1    
+                                     curr_mid-s.pred_n, 0]) + s.price_n_minus_1    
                 s.accept_price_n(curr_mid)
                 s.accept_pred_n(pred_n)
 
@@ -295,8 +267,7 @@ class TrendTrader:
             orders.append(Order(product, ask, -20-curr_pos))
             #orders.append(Order(product, bid, -round(0.25*(-20-curr_pos))))
 
-        return orders, s.to_json()
-        #result[product] = orders
+        return orders
 
 class SMMTrader:
     def max_vol_quote(self, order_dict, buy):
@@ -378,31 +349,45 @@ class SMMTrader:
 
         
         "MARKET TAKING"
-        new_pos, buys = market_buy(product, sell_orders, acc_bid, curr_pos)
+        new_pos, buys = self.market_buy(product, sell_orders, acc_bid, curr_pos)
         curr_pos += new_pos
-        new_pos, sells = market_sell(product, buy_orders, acc_ask, curr_pos)
+        new_pos, sells = self.market_sell(product, buy_orders, acc_ask, curr_pos)
         curr_pos += new_pos
         orders.extend(buys+sells)
-
-        
-
         return orders
     
-    def run(self, state: TradingState, traderData: TraderDataDTO):
+    def run(self, state: TradingState):
         my_bids = {'AMETHYSTS':10000, 'STARFRUIT':0}
         my_asks = {'AMETHYSTS':10000, 'STARFRUIT':0}
-
-        result = {}
-        positions = state.position
-
         for product in state.order_depths:
-            order_depth: OrderDepth = state.order_depths[product]
-
             if product=='AMETHYSTS':
-                result[product] = self.smm(product, state, my_bids[product], my_asks[product])
+                return self.smm(product, state, my_bids[product], my_asks[product])
     
-        conversions = 1
-        return result, conversions
+    def market_buy(self, product, sell_orders, acceptable_price, curr_pos):
+        """Modularizing market buy order"""
+        buys = []
+        order_for = 0
+        if len(sell_orders) != 0:
+                best_ask, best_ask_amount = list(sell_orders.items())[0]
+                if int(best_ask) < acceptable_price:
+                    order_for = min(-best_ask_amount, 20-curr_pos)
+                    print("BUY", str(order_for) + "x", best_ask)
+                    buys.append(Order(product, best_ask, order_for))
+        return order_for, buys
+
+    def market_sell(self, product, buy_orders, acceptable_price, curr_pos):
+        """Modularizing market sell orders"""
+        sells = []
+        order_for = 0
+        if len(buy_orders) != 0:
+              best_bid, best_bid_amount = list(buy_orders.items())[0]
+              if int(best_bid) > acceptable_price:
+                  # Similar situation with sell orders
+                  order_for = max(-best_bid_amount, -20-curr_pos)
+                  print("SELL", str(-order_for) + "x", best_bid)
+                  sells.append(Order(product, best_bid, order_for))
+        return order_for, sells
+    
 
 logger = Logger()
     
@@ -419,11 +404,11 @@ class Trader:
         
         for product in state.order_depths:
             if product == 'STARFRUIT':
-                result[product], prop = trend_trader.run(product, state, trader_data_dto)
+                result[product] = trend_trader.run(product, state, trader_data_dto)
             if product == 'AMETHYSTS':
-                result[product], prop = smm_trader.run(state, trader_data_dto)
+                result[product] = smm_trader.run(state)
     
         conversions = 1
         trader_data = trader_data_dto.to_json()
-        logger.flush(state, result, conversions, trader_data)
+        # logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data

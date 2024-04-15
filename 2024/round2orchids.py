@@ -64,7 +64,7 @@ class Trader:
 
         # Parameters
         margin_of_safety = 0
-        size_per_price = 25
+        size_per_price = 33
 
         lowest_we_would_sell = round(purchase + margin_of_safety)
         highest_we_would_buy = round(sale - margin_of_safety)
