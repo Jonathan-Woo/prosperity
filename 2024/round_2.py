@@ -16,12 +16,46 @@ import numpy as np
 import statistics as stats
 import math
 import json
+import jsonpickle
+
+
+class TraderDataDTO:
+    def __init__(self):
+        self._prices = {}
+
+    def accept_product_price(self, symbol, price):
+        if symbol not in self._prices:
+            self._prices[symbol] = []
+
+        self._prices[symbol].append(price)
+
+    def drop_product_price(self, symbol):
+        if symbol not in self._prices:
+            return
+        self._prices[symbol].pop(0)
+
+    def get_product_price(self, symbol):
+        return self._prices[symbol]
+
+    def to_json(self):
+        return jsonpickle.encode(self)
+
+    def __eq__(self, other):
+        return
+
+    @staticmethod
+    def from_json(json_string: string):
+        if json_string is None or json_string == "":
+            return TraderDataDTO()
+
+        return jsonpickle.decode(json_string)
 
 
 class Trader:
 
     def __init__(self):
         self.result = {}
+        self.traderData = None
 
         # For AMETHYSTS
         self.amethysts_params = {"position_limit": 20}
@@ -29,9 +63,7 @@ class Trader:
         # For STARFRUIT
         self.starfruit_params = {
             "position_limit": 20,
-            "past_prices": pd.Series(dtype="float64"),
-            "predictions": pd.Series(dtype="float64"),
-            "last_market_taking_action": "NONE",
+            "LR_coefs": [0.1, 0.1],
         }
 
     def starfruit(self):
@@ -39,12 +71,75 @@ class Trader:
             cur_position = self.state.position["STARFRUIT"]
         else:
             cur_position = 0
+        new_long_position, new_short_position = cur_position, cur_position
+        position_limit = self.starfruit_params["position_limit"]
+        window_size = len(self.starfruit_params["LR_coefs"])
+        self.result["STARFRUIT"] = []
+
+        highest_market_bid = max(self.state.order_depths["STARFRUIT"].buy_orders.keys())
+        lowest_market_ask = min(self.state.order_depths["STARFRUIT"].sell_orders.keys())
+        mid_price = (highest_market_bid + lowest_market_ask) / 2
+
+        # Update the trader data with the latest price
+        self.traderData.accept_product_price("STARFRUIT", mid_price)
+        if len(self.traderData.get_product_price("STARFRUIT")) > window_size:
+            self.traderData.drop_product_price("STARFRUIT")
+            assert len(self.traderData.get_product_price("STARFRUIT")) == window_size
+
+        # Start trading after the window of prices has been filled.
+        if len(self.traderData.get_product_price("STARFRUIT")) < window_size:
+            return
+
+        # Compute expected price
+        expected_price = np.array(self.starfruit_params["LR_coefs"]).dot(
+            self.traderData.get_product_price("STARFRUIT")
+        )
+        expected_price = round(expected_price)
+
+        # Market orders
+        # Buy undervalued
+        # Buy at value if we are short
+        for ask, qty in self.state.order_depths["STARFRUIT"].sell_orders.items():
+            if (
+                (ask < expected_price) or ((cur_position < 0) and (ask == mid_price))
+            ) and new_long_position < position_limit:
+                order_qty = min(-qty, position_limit - new_long_position)
+                new_long_position += order_qty
+                self.result["STARFRUIT"].append(Order("STARFRUIT", ask, order_qty))
+
+        # Sell overvalued
+        # Sell at value if we are long
+        for bid, qty in self.state.order_depths["STARFRUIT"].buy_orders.items():
+            if (
+                (bid > expected_price) or ((cur_position > 0) and (bid == mid_price))
+            ) and new_short_position > -position_limit:
+                order_qty = min(qty, position_limit + new_short_position)
+                new_short_position -= order_qty
+                self.result["STARFRUIT"].append(Order("STARFRUIT", bid, -order_qty))
+
+        # Market making
+        # Setup orders to tighten the spread
+        # The price must be at least 1 away from the current market price or the expected price
+        tighter_bid = highest_market_bid + 1
+        tighter_ask = lowest_market_ask - 1
+
+        if new_long_position < position_limit:
+            order_qty = position_limit - new_long_position
+            new_long_position += order_qty
+            order_price = min(tighter_bid, expected_price - 1)
+            self.result["STARFRUIT"].append(Order("STARFRUIT", order_price, order_qty))
+        if new_short_position > -position_limit:
+            order_qty = position_limit + new_short_position
+            new_short_position -= order_qty
+            order_price = max(tighter_ask, expected_price + 1)
+            self.result["STARFRUIT"].append(Order("STARFRUIT", order_price, -order_qty))
 
     def amethyst(self):
         if "AMETHYSTS" in self.state.position:
             cur_position = self.state.position["AMETHYSTS"]
         else:
             cur_position = 0
+        new_long_position, new_short_position = cur_position, cur_position
         mean_price = 10000
         position_limit = self.amethysts_params["position_limit"]
         self.result["AMETHYSTS"] = []
@@ -55,18 +150,18 @@ class Trader:
         for ask, qty in self.state.order_depths["AMETHYSTS"].sell_orders.items():
             if (
                 (ask < mean_price) or ((cur_position < 0) and (ask == mean_price))
-            ) and cur_position < position_limit:
-                order_qty = min(-qty, position_limit - cur_position)
-                cur_position += order_qty
+            ) and new_long_position < position_limit:
+                order_qty = min(-qty, position_limit - new_long_position)
+                new_long_position += order_qty
                 self.result["AMETHYSTS"].append(Order("AMETHYSTS", ask, order_qty))
         # Sell overvalued (> 10000)
         # Sell at value (= 10000) if we are long
         for bid, qty in self.state.order_depths["AMETHYSTS"].buy_orders.items():
             if (
                 (bid > mean_price) or ((cur_position > 0) and (bid == mean_price))
-            ) and cur_position > -position_limit:
-                order_qty = min(qty, position_limit + cur_position)
-                cur_position -= order_qty
+            ) and new_short_position > -position_limit:
+                order_qty = min(qty, position_limit + new_short_position)
+                new_short_position -= order_qty
                 self.result["AMETHYSTS"].append(Order("AMETHYSTS", bid, -order_qty))
 
         # Market making
@@ -78,37 +173,41 @@ class Trader:
         tighter_ask = lowest_market_ask - 1
 
         # Depending on the current position, adjust the spread.
-        if cur_position < 0 and cur_position < position_limit:
+        if cur_position < 0 and new_long_position < position_limit:
             order_price = min(tighter_bid + 1, mean_price - 1)
-        elif cur_position > 15 and cur_position < position_limit:
+        elif cur_position > 15 and new_long_position < position_limit:
             order_price = min(tighter_bid + 1, mean_price - 1)
         else:
             order_price = min(tighter_bid, mean_price - 1)
-        order_qty = position_limit - cur_position
+        order_qty = position_limit - new_long_position
+        new_long_position += order_qty
         self.result["AMETHYSTS"].append(Order("AMETHYSTS", order_price, order_qty))
 
-        if cur_position > 0 and cur_position > -position_limit:
+        if cur_position > 0 and new_short_position > -position_limit:
             order_price = max(tighter_ask - 1, mean_price + 1)
-        elif cur_position < -15 and cur_position > -position_limit:
+        elif cur_position < -15 and new_short_position > -position_limit:
             order_price = max(tighter_ask + 1, mean_price + 1)
         else:
             order_price = max(tighter_ask, mean_price + 1)
-        order_qty = position_limit + cur_position
+        order_qty = position_limit + new_short_position
+        new_short_position -= order_qty
         self.result["AMETHYSTS"].append(Order("AMETHYSTS", order_price, -order_qty))
 
+        print("AMETHYST ORDERS: ", self.result["AMETHYSTS"])
+
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
-        """
-        Takes all buy and sell orders for all symbols as an input,
-        and outputs a list of orders to be sent
-        """
+        # Update properties from the last timestep.
         self.state = state
+        self.traderData = TraderDataDTO.from_json(state.traderData)
+
+        print(self.state.position)
 
         self.amethyst()
-        print(self.result)
+        self.starfruit()
 
         conversions = 1
-        traderData = "SAMPLE"
-        logger.flush(state, self.result, conversions, traderData)
+        traderData = TraderDataDTO.to_json(self.traderData)
+        # logger.flush(state, self.result, conversions, traderData)
         return self.result, conversions, traderData
 
 
@@ -239,4 +338,4 @@ class Logger:
         return value[: max_length - 3] + "..."
 
 
-logger = Logger()
+# logger = Logger()
