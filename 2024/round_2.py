@@ -63,7 +63,7 @@ class Trader:
         # For STARFRUIT
         self.starfruit_params = {
             "position_limit": 20,
-            "LR_coefs": [0.1, 0.1],
+            "LR_coefs": [0.19636058, 0.20562856, 0.26297532, 0.33503426],
         }
 
     def starfruit(self):
