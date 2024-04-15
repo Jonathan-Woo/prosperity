@@ -71,6 +71,9 @@ class Trader:
             cur_position = self.state.position["STARFRUIT"]
         else:
             cur_position = 0
+        # Position limits dictate that current position + aggregated buys must not exceed position limit
+        # and current position - aggregated sells must not exceed position limit
+        # So, keep track of the new long and short positions
         new_long_position, new_short_position = cur_position, cur_position
         position_limit = self.starfruit_params["position_limit"]
         window_size = len(self.starfruit_params["LR_coefs"])
@@ -139,6 +142,9 @@ class Trader:
             cur_position = self.state.position["AMETHYSTS"]
         else:
             cur_position = 0
+        # Position limits dictate that current position + aggregated buys must not exceed position limit
+        # and current position - aggregated sells must not exceed position limit
+        # So, keep track of the new long and short positions
         new_long_position, new_short_position = cur_position, cur_position
         mean_price = 10000
         position_limit = self.amethysts_params["position_limit"]
@@ -193,14 +199,10 @@ class Trader:
         new_short_position -= order_qty
         self.result["AMETHYSTS"].append(Order("AMETHYSTS", order_price, -order_qty))
 
-        print("AMETHYST ORDERS: ", self.result["AMETHYSTS"])
-
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         # Update properties from the last timestep.
         self.state = state
         self.traderData = TraderDataDTO.from_json(state.traderData)
-
-        print(self.state.position)
 
         self.amethyst()
         self.starfruit()
