@@ -59,7 +59,8 @@ class Trader:
         }
 
         self.orchids_params = {
-            'position_limit': 100
+            'position_limit': 100,
+            'size_per_price': 33
         }
 
     def starfruit(self):
@@ -195,7 +196,7 @@ class Trader:
         new_short_position -= order_qty
         self.result["AMETHYSTS"].append(Order("AMETHYSTS", order_price, -order_qty))
 
-    def ORCHIDS(self):      
+    def orchids(self):      
         if "ORCHIDS" in self.state.position:
             cur_position = self.state.position["ORCHIDS"]
         else:
@@ -231,7 +232,6 @@ class Trader:
 
         # Buy from South (next timestep) and sell in normal market (now)
         if conversion_purchase_price < highest_market_bid:
-            # assert not sell_arb_opportunity
             for bid, qty in self.state.order_depths["ORCHIDS"].buy_orders.items():
                 # If bid price facilitates arbitrage
                 if conversion_purchase_price < bid and new_short_position > -position_limit:
@@ -240,21 +240,16 @@ class Trader:
                     self.result['ORCHIDS'].append(Order('ORCHIDS', bid, -order_qty))
 
             # since we are selling to arb, let's try to put limit asks as well
-            # diff = highest_market_bid - lowest_we_would_sell
-            # if diff > 0:
-            #     while new_short_position > 0:
-            #         for i in range(1, diff):
-            #             if position_limit > 0:
-            #                 order_qty = min(15, position_limit)
-            #                 position_limit -= order_qty
-            #                 orders.append(Order('ORCHIDS', best_ask - i, -order_qty))
-            #                 # logger.print(f"ORCHIDS: Market order selling {order_quantity} at {best_ask - i}.")
-            #             else:
-            #                 break
+            diff = highest_market_bid - conversion_purchase_price
+            qty_per_price = (position_limit + new_short_position)//(diff - 1)
+            for i in range(1, diff):
+                if new_short_position > -position_limit:
+                    order_qty = min(qty_per_price, position_limit + new_short_position)
+                    new_short_position -= order_qty
+                    self.result['ORCHIDS'].append(Order('ORCHIDS', highest_market_bid -i, -order_qty))
 
         # Sell to South (next timestep) and buy in normal market (now)
         if conversion_sell_price > lowest_market_ask:
-            # assert not buy_arb_opportunity
             for ask, qty in self.state.order_depths["ORCHIDS"].sell_orders.items():
                 # If ask price facilitates arbitrage
                 if conversion_sell_price > ask and new_long_position < position_limit:
@@ -263,36 +258,31 @@ class Trader:
                     self.result['ORCHIDS'].append(Order('ORCHIDS', ask, order_qty))
 
             # since we are buying to arb, let's try to put limit bids as well
-            # diff = highest_we_would_buy - best_bid
-            # if diff > 0:
-            #     while position_limit > 0:
-            #         for i in range(1, diff):
-            #             if position_limit > 0:
-            #                 order_qty = min(15, position_limit)
-            #                 position_limit -= order_qty
-            #                 orders.append(Order('ORCHIDS', best_bid + i, order_qty))
-            #                 # logger.print(f"ORCHIDS: Market order buying {order_quantity} at {best_bid + i}.")
-            #             else:
-            #                 break
+            diff = conversion_sell_price - lowest_market_ask
+            qty_per_price = (position_limit - new_long_position)//(diff - 1)
+            for i in range(1, diff):
+                if new_long_position < position_limit:
+                    order_qty = min(qty_per_price, position_limit - new_long_position)
+                    new_long_position += order_qty
+                    self.result['ORCHIDS'].append(Order('ORCHIDS', lowest_market_ask + i, order_qty))
 
-        # End of 'Sell to South, buy locally'
+        # Market make when no immediate arb available
+        if conversion_purchase_price > highest_market_bid and conversion_sell_price < lowest_market_ask:
+            # placing limit asks @ purchase + 1 and above
+            max_iterations = ((position_limit + new_short_position) // size_per_price) + 1
+            for i in range(1, max_iterations+1):
+                if new_short_position > -position_limit:
+                    order_qty = min(size_per_price, position_limit + new_short_position)
+                    new_short_position -= order_qty
+                    self.result['ORCHIDS'].append(Order('ORCHIDS', lowest_we_would_sell + i, -order_qty))
 
-        # Market making arb, when no immediate arb available
-        # placing limit asks @ purchase + 1 and above
-        max_iterations = ((position_limit + new_short_position) // size_per_price) + 1
-        for i in range(1, max_iterations+1):
-            if new_short_position > -position_limit:
-                order_qty = min(size_per_price, position_limit + new_short_position)
-                new_short_position -= order_qty
-                self.result['ORCHIDS'].append(Order('ORCHIDS', lowest_we_would_sell + i, -order_qty))
-
-        # placing limit bids @ sale - 1 and below
-        max_iterations = ((position_limit - new_long_position) // size_per_price) + 1
-        for i in range(1, max_iterations+1):
-            if new_long_position > 0:
-                order_qty = min(size_per_price, position_limit - new_long_position)
-                new_long_position += order_qty
-                self.result['ORCHIDS'].append(Order('ORCHIDS', highest_we_would_buy - i, order_qty))
+            # # placing limit bids @ sale - 1 and below
+            max_iterations = ((position_limit - new_long_position) // size_per_price) + 1
+            for i in range(1, max_iterations+1):
+                if new_long_position > 0:
+                    order_qty = min(size_per_price, position_limit - new_long_position)
+                    new_long_position += order_qty
+                    self.result['ORCHIDS'].append(Order('ORCHIDS', highest_we_would_buy - i, order_qty))
 
     def run(self, state: TradingState):
         """
@@ -305,7 +295,7 @@ class Trader:
 
         self.amethyst()
         self.starfruit()
-        self.ORCHIDS(state)
+        self.orchids()
         
         position = 0
         if "ORCHIDS" in state.position:
