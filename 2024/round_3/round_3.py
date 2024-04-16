@@ -240,13 +240,14 @@ class Trader:
                     self.result['ORCHIDS'].append(Order('ORCHIDS', bid, -order_qty))
 
             # since we are selling to arb, let's try to put limit asks as well
-            diff = highest_market_bid - conversion_purchase_price
-            qty_per_price = (position_limit + new_short_position)//(diff - 1)
-            for i in range(1, diff):
-                if new_short_position > -position_limit:
-                    order_qty = min(qty_per_price, position_limit + new_short_position)
-                    new_short_position -= order_qty
-                    self.result['ORCHIDS'].append(Order('ORCHIDS', highest_market_bid -i, -order_qty))
+            diff = math.floor(highest_market_bid - conversion_purchase_price)
+            if diff > 1:
+                qty_per_price = (position_limit + new_short_position)//diff
+                for i in range(diff):
+                    if new_short_position > -position_limit:
+                        order_qty = min(qty_per_price, position_limit + new_short_position)
+                        new_short_position -= order_qty
+                        self.result['ORCHIDS'].append(Order('ORCHIDS', highest_market_bid -i, -order_qty))
 
         # Sell to South (next timestep) and buy in normal market (now)
         if conversion_sell_price > lowest_market_ask:
@@ -258,13 +259,14 @@ class Trader:
                     self.result['ORCHIDS'].append(Order('ORCHIDS', ask, order_qty))
 
             # since we are buying to arb, let's try to put limit bids as well
-            diff = conversion_sell_price - lowest_market_ask
-            qty_per_price = (position_limit - new_long_position)//(diff - 1)
-            for i in range(1, diff):
-                if new_long_position < position_limit:
-                    order_qty = min(qty_per_price, position_limit - new_long_position)
-                    new_long_position += order_qty
-                    self.result['ORCHIDS'].append(Order('ORCHIDS', lowest_market_ask + i, order_qty))
+            diff = math.floor(conversion_sell_price - lowest_market_ask)
+            if diff > 1:
+                qty_per_price = (position_limit - new_long_position)//diff
+                for i in range(diff):
+                    if new_long_position < position_limit:
+                        order_qty = min(qty_per_price, position_limit - new_long_position)
+                        new_long_position += order_qty
+                        self.result['ORCHIDS'].append(Order('ORCHIDS', lowest_market_ask + i, order_qty))
 
         # Market make when no immediate arb available
         if conversion_purchase_price > highest_market_bid and conversion_sell_price < lowest_market_ask:
