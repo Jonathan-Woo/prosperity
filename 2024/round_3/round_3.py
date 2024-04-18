@@ -281,7 +281,7 @@ class Trader:
             # # placing limit bids @ sale - 1 and below
             max_iterations = ((position_limit - new_long_position) // size_per_price) + 1
             for i in range(1, max_iterations+1):
-                if new_long_position > 0:
+                if position_limit > new_long_position:
                     order_qty = min(size_per_price, position_limit - new_long_position)
                     new_long_position += order_qty
                     self.result['ORCHIDS'].append(Order('ORCHIDS', highest_we_would_buy - i, order_qty))
