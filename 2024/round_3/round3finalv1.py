@@ -464,7 +464,7 @@ class Trader:
         }
 
         threshold = 380
-        margin_of_safety = 10
+        margin_of_safety = 5
 
         orders_etf = []
 
@@ -590,7 +590,7 @@ class Trader:
 
         print(self.state.observations.conversionObservations)
 
-        conversions = 0 #-position
+        conversions = -position
         traderData = TraderDataDTO.to_json(self.traderData)
         logger.flush(state, self.result, conversions, traderData)  # For visualizer
         return self.result, conversions, traderData
