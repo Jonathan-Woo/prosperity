@@ -26,6 +26,13 @@ import json
 class TraderDataDTO:
     def __init__(self):
         self._prices = {}
+        self._implied_vol_historical = pd.Series(dtype='float64')
+
+    def accept_implied_vol(self, implied_vol):
+        self._implied_vol_historical = pd.concat([self._implied_vol_historical, pd.Series(implied_vol)], ignore_index=True)
+
+    def get_implied_vol_historical(self):
+        return self._implied_vol_historical
 
     def accept_product_price(self, symbol, price):
         if symbol not in self._prices:
@@ -43,9 +50,6 @@ class TraderDataDTO:
 
     def to_json(self):
         return jsonpickle.encode(self)
-
-    def __eq__(self, other):
-        return
 
     @staticmethod
     def from_json(json_string: str):
@@ -116,7 +120,6 @@ class Trader:
         }
 
         self.coco_params = {
-            'implied_vol_historical': pd.Series(dtype='float64'),
             'coconut_prices': pd.Series(dtype='float64')
         }
 
@@ -594,9 +597,7 @@ class Trader:
                 raise ValueError("Implied volatility calculation did not converge.")
 
             implied_vol = implied_volatility(market_price, S, K, t, r)
-            implied_vol_historical = self.coco_params['implied_vol_historical']
-            implied_vol_historical = pd.concat([implied_vol_historical, pd.Series(implied_vol)], ignore_index=True)
-            self.coco_params['implied_vol_historical'] = implied_vol_historical
+            self.traderData.accept_implied_vol(implied_vol)
 
             # coconut_prices = self.coco_params['coconut_prices']
             # coconut_prices = pd.concat([coconut_prices, pd.Series(COCONUT_midpoint)], ignore_index=True)
@@ -606,7 +607,7 @@ class Trader:
             size_per_take_coupon = 30
 
             if 8000 < self.state.timestamp < 999000:
-                true_vol = stats.mean(implied_vol_historical)
+                true_vol = stats.mean(self.traderData.get_implied_vol_historical())
                 # differenced_coconut_prices = coconut_prices.diff()
                 # true_vol = np.std(differenced_coconut_prices)
 
