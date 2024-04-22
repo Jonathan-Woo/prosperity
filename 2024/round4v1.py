@@ -705,14 +705,14 @@ class Trader:
         self.traderData = TraderDataDTO.from_json(state.traderData)
         self.result = {}
 
-        # self.amethyst()
-        # self.starfruit()
-        # self.orchids()
+        self.amethyst()
+        self.starfruit()
+        self.orchids()
         # For the orchids' strategy, convert all accrued positions.
         position = 0
         if "ORCHIDS" in state.position:
             position = state.position["ORCHIDS"]
-        # self.basket()
+        self.basket()
 
         self.coconuts()
 
