@@ -27,12 +27,19 @@ class TraderDataDTO:
     def __init__(self):
         self._prices = {}
         self._implied_vol_historical = pd.Series(dtype='float64')
+        self._diff_historical = pd.Series(dtype='float64') 
 
     def accept_implied_vol(self, implied_vol):
         self._implied_vol_historical = pd.concat([self._implied_vol_historical, pd.Series(implied_vol)], ignore_index=True)
 
     def get_implied_vol_historical(self):
         return self._implied_vol_historical
+
+    def accept_diff(self, diff):
+        self._diff_historical = pd.concat([self._diff_historical, pd.Series(diff)], ignore_index=True)
+
+    def get_diff_historical(self):
+        return self._diff_historical
 
     def accept_product_price(self, symbol, price):
         if symbol not in self._prices:
@@ -79,7 +86,6 @@ class Trader:
         }
 
         self.basket_params = {
-            'diff_historical': pd.Series(dtype='float64'),
             'notable_times': {},
             'swings': 0
         }
@@ -476,10 +482,8 @@ class Trader:
 
             nav = 6 * mid_berry + 4 * mid_choc + mid_roses
 
-            diff_historical = self.basket_params['diff_historical']
             diff = mid_basket - nav
-            diff_historical = pd.concat([diff_historical, pd.Series(diff)], ignore_index=True)
-            self.basket_params['diff_historical'] = diff_historical
+            self.traderData.accept_diff(diff)
 
             factor = 1
             size_per_take = 12
@@ -488,6 +492,8 @@ class Trader:
                 position = self.state.position["GIFT_BASKET"]
             else:
                 position = 0
+
+            diff_historical = self.traderData.get_diff_historical()
 
             if self.state.timestamp > 50000:
                 std = stats.stdev(diff_historical)
