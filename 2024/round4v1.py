@@ -604,7 +604,7 @@ class Trader:
             # self.coco_params['coconut_prices'] = coconut_prices
 
             size_per_take_coco = 300
-            size_per_take_coupon = 30
+            size_per_take_coupon = 20
 
             if 8000 < self.state.timestamp < 999000:
                 true_vol = stats.mean(self.traderData.get_implied_vol_historical())
@@ -616,21 +616,21 @@ class Trader:
                     position_limit = 600 - COCONUT_COUPON_position
                     taken = 0
                     # For placing an order at best current market taking price
-                    order_quantity = min(-COCONUT_COUPON_asks[0][1], position_limit)
-                    position_limit -= order_quantity
-                    orders_coupon.append(Order('COCONUT_COUPON', COCONUT_COUPON_asks[0][0], order_quantity))
+                    # order_quantity = min(-COCONUT_COUPON_asks[0][1], position_limit)
+                    # position_limit -= order_quantity
+                    # orders_coupon.append(Order('COCONUT_COUPON', COCONUT_COUPON_asks[0][0], order_quantity))
 
                     ### For walking the book with market orders up to qty size_per_take
-                    # for ask in COCONUT_COUPON_asks:
-                    #     # If we have inventory space
-                    #     if position_limit > 0:
-                    #         if taken < size_per_take_coupon:
-                    #             order_quantity = min(-ask[1], position_limit, size_per_take_coupon)
-                    #             position_limit -= order_quantity
-                    #             taken += order_quantity
-                    #             orders_coupon.append(Order('COCONUT_COUPON', ask[0], order_quantity))
-                    #     else:
-                    #         break
+                    for ask in COCONUT_COUPON_asks:
+                        # If we have inventory space
+                        if position_limit > 0:
+                            if taken < size_per_take_coupon:
+                                order_quantity = min(-ask[1], position_limit, size_per_take_coupon)
+                                position_limit -= order_quantity
+                                taken += order_quantity
+                                orders_coupon.append(Order('COCONUT_COUPON', ask[0], order_quantity))
+                        else:
+                            break
 
                     ### For placing limit order undercutting the book for qty up to size_per_take
                     if position_limit > 0:
@@ -644,21 +644,21 @@ class Trader:
                     taken = 0
 
                     ### For placing an order at best current market taking price
-                    order_quantity = min(COCONUT_COUPON_bids[0][1], position_limit)
-                    position_limit -= order_quantity
-                    orders_coupon.append(Order('COCONUT_COUPON', COCONUT_COUPON_bids[0][0], -order_quantity))
+                    # order_quantity = min(COCONUT_COUPON_bids[0][1], position_limit)
+                    # position_limit -= order_quantity
+                    # orders_coupon.append(Order('COCONUT_COUPON', COCONUT_COUPON_bids[0][0], -order_quantity))
 
                     ### For walking the book with market orders up to qty size_per_take
-                    # for bid in COCONUT_COUPON_bids:
-                    #     # If we have inventory space
-                    #     if position_limit > 0:
-                    #         if taken < size_per_take_coupon:
-                    #             order_quantity = min(bid[1], position_limit, size_per_take_coupon)
-                    #             position_limit -= order_quantity
-                    #             taken += order_quantity
-                    #             orders_coupon.append(Order('COCONUT_COUPON', bid[0], -order_quantity))
-                    #     else:
-                    #         break
+                    for bid in COCONUT_COUPON_bids:
+                        # If we have inventory space
+                        if position_limit > 0:
+                            if taken < size_per_take_coupon:
+                                order_quantity = min(bid[1], position_limit, size_per_take_coupon)
+                                position_limit -= order_quantity
+                                taken += order_quantity
+                                orders_coupon.append(Order('COCONUT_COUPON', bid[0], -order_quantity))
+                        else:
+                            break
 
                     ### For placing limit order undercutting the book for qty up to size_per_take
                     if position_limit > 0:
