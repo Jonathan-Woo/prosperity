@@ -412,7 +412,10 @@ class Trader:
                         order_quantity = min(qty, position_limit + new_short_position, size_per_take)
                         new_short_position -= order_quantity
                         taken += order_quantity
-                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', bid[0], -order_quantity))
+                        if 'GIFT_BASKET' not in self.result:
+                            self.result['GIFT_BASKET'] = []
+
+                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', bid, -order_quantity))
 
             # Long
             if diff < avg - factor * std:
@@ -422,7 +425,11 @@ class Trader:
                         order_quantity = min(-qty, position_limit + new_long_position, size_per_take)
                         new_long_position += order_quantity
                         taken += order_quantity
-                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', ask[0], order_quantity))
+
+                        if 'GIFT_BASKET' not in self.result:
+                            self.result['GIFT_BASKET'] = []
+
+                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', ask, order_quantity))
 
     def coconuts(self):
         orders_coconut = []
@@ -648,10 +655,8 @@ class Trader:
         position = 0
         if "ORCHIDS" in state.position:
             position = state.position["ORCHIDS"]
-        try:
-            self.basket()
-        except:
-            pass
+
+        self.basket()
         # try:
         #     self.coconuts()
         # except:

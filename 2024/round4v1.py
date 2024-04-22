@@ -702,6 +702,83 @@ class Trader:
         except:
             pass
 
+    def basket2(self):
+        max_bids_choc = max(self.state.order_depths["CHOCOLATE"].buy_orders.keys())
+        min_asks_choc = min(self.state.order_depths["CHOCOLATE"].sell_orders.keys())
+        mid_choc = (max_bids_choc + min_asks_choc) / 2
+
+        max_bids_berry = max(
+            self.state.order_depths["STRAWBERRIES"].buy_orders.keys()
+        )
+        min_asks_berry = min(
+            self.state.order_depths["STRAWBERRIES"].sell_orders.keys()
+        )
+        mid_berry = (max_bids_berry + min_asks_berry) / 2
+
+        max_bids_roses = max(self.state.order_depths["ROSES"].buy_orders.keys())
+        min_asks_roses = min(self.state.order_depths["ROSES"].sell_orders.keys())
+        mid_roses = (max_bids_roses + min_asks_roses) / 2
+
+        bids_basket = sorted(
+            list(self.state.order_depths["GIFT_BASKET"].buy_orders.items()),
+            key=lambda x: x[0],
+            reverse=True,
+        )
+        asks_basket = sorted(
+            list(self.state.order_depths["GIFT_BASKET"].sell_orders.items()),
+            key=lambda x: x[0],
+            reverse=False,
+        )
+        max_bids_basket = bids_basket[0][0]
+        min_asks_basket = asks_basket[0][0]
+        mid_basket = (max_bids_basket + min_asks_basket) / 2
+
+        nav = 6 * mid_berry + 4 * mid_choc + mid_roses
+
+        diff = mid_basket - nav
+        self.update_stored_price("GIFT_BASKET", diff)
+        diff_historical = self.traderData.get_product_price("GIFT_BASKET")
+
+        factor = 1
+        size_per_take = 12
+
+        if "GIFT_BASKET" in self.state.position:
+            cur_position = self.state.position["GIFT_BASKET"]
+        else:
+            cur_position = 0
+        new_long_position, new_short_position = cur_position, cur_position
+        position_limit = self.basket_params['position_limit']
+
+        if self.state.timestamp > 50000:
+            std = stats.stdev(diff_historical)
+            avg = stats.mean(diff_historical)
+            # Short
+            if diff > avg + factor * std:
+                taken = 0
+                for bid,qty in bids_basket:
+                    if taken < size_per_take:
+                        order_quantity = min(qty, position_limit + new_short_position, size_per_take)
+                        new_short_position -= order_quantity
+                        taken += order_quantity
+                        if 'GIFT_BASKET' not in self.result:
+                            self.result['GIFT_BASKET'] = []
+
+                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', bid, -order_quantity))
+
+            # Long
+            if diff < avg - factor * std:
+                taken = 0
+                for ask, qty in asks_basket:
+                    if taken < size_per_take:
+                        order_quantity = min(-qty, position_limit + new_long_position, size_per_take)
+                        new_long_position += order_quantity
+                        taken += order_quantity
+
+                        if 'GIFT_BASKET' not in self.result:
+                            self.result['GIFT_BASKET'] = []
+
+                        self.result['GIFT_BASKET'].append(Order('GIFT_BASKET', ask, order_quantity))
+
     def run(self, state: TradingState):
         """
         Takes all buy and sell orders for all symbols as an input,
@@ -718,7 +795,7 @@ class Trader:
         position = 0
         if "ORCHIDS" in state.position:
             position = state.position["ORCHIDS"]
-        self.basket()
+        self.basket2()
 
         self.coconuts()
 
