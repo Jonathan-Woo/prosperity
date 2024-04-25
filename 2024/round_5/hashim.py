@@ -21,29 +21,11 @@ import statistics as stats
 import math
 import jsonpickle
 import json
-import jsonpickle.ext.pandas as jsonpickle_pandas
-import jsonpickle.ext.numpy as jsonpickle_numpy
-jsonpickle_numpy.register_handlers()
-jsonpickle_pandas.register_handlers()
 
 
 class TraderDataDTO:
     def __init__(self):
         self._prices = {}
-        self._implied_vol_historical = pd.Series(dtype='float64')
-        self._diff_historical = pd.Series(dtype='float64')
-
-    def accept_implied_vol(self, implied_vol):
-        self._implied_vol_historical = pd.concat([self._implied_vol_historical, pd.Series(implied_vol)], ignore_index=True)
-
-    def get_implied_vol_historical(self):
-        return self._implied_vol_historical
-
-    def accept_diff(self, diff):
-        self._diff_historical = pd.concat([self._diff_historical, pd.Series(diff)], ignore_index=True)
-
-    def get_diff_historical(self):
-        return self._diff_historical
 
     def accept_product_price(self, symbol, price):
         if symbol not in self._prices:
@@ -61,6 +43,9 @@ class TraderDataDTO:
 
     def to_json(self):
         return jsonpickle.encode(self)
+
+    def __eq__(self, other):
+        return
 
     @staticmethod
     def from_json(json_string: str):
@@ -90,8 +75,8 @@ class Trader:
         }
 
         self.basket_params = {
-            'notable_times': {},
-            'swings': 0
+            'diff_historical': pd.Series(dtype='float64'),
+            'deviance_historical': pd.Series(dtype='float64')
         }
 
         self.orchids_params = {"position_limit": 100, "size_per_price": 33}
@@ -130,7 +115,8 @@ class Trader:
         }
 
         self.coco_params = {
-            'coconut_prices': pd.Series(dtype='float64')
+            'implied_vol_historical': np.array([]),
+            'coconut_prices': np.array([])
         }
 
     def update_stored_price(self, product, price, window_size):
@@ -187,7 +173,7 @@ class Trader:
         # Buy at value if we are short
         for ask, qty in self.state.order_depths["STARFRUIT"].sell_orders.items():
             if (
-                (ask < expected_price) or ((cur_position < 0) and (ask == mid_price))
+                    (ask < expected_price) or ((cur_position < 0) and (ask == mid_price))
             ) and new_long_position < position_limit:
                 order_qty = min(-qty, position_limit - new_long_position)
                 new_long_position += order_qty
@@ -197,7 +183,7 @@ class Trader:
         # Sell at value if we are long
         for bid, qty in self.state.order_depths["STARFRUIT"].buy_orders.items():
             if (
-                (bid > expected_price) or ((cur_position > 0) and (bid == mid_price))
+                    (bid > expected_price) or ((cur_position > 0) and (bid == mid_price))
             ) and new_short_position > -position_limit:
                 order_qty = min(qty, position_limit + new_short_position)
                 new_short_position -= order_qty
@@ -238,7 +224,7 @@ class Trader:
         # Buy at value (= 10000) if we are short
         for ask, qty in self.state.order_depths["AMETHYSTS"].sell_orders.items():
             if (
-                (ask < mean_price) or ((cur_position < 0) and (ask == mean_price))
+                    (ask < mean_price) or ((cur_position < 0) and (ask == mean_price))
             ) and new_long_position < position_limit:
                 order_qty = min(-qty, position_limit - new_long_position)
                 new_long_position += order_qty
@@ -247,7 +233,7 @@ class Trader:
         # Sell at value (= 10000) if we are long
         for bid, qty in self.state.order_depths["AMETHYSTS"].buy_orders.items():
             if (
-                (bid > mean_price) or ((cur_position > 0) and (bid == mean_price))
+                    (bid > mean_price) or ((cur_position > 0) and (bid == mean_price))
             ) and new_short_position > -position_limit:
                 order_qty = min(qty, position_limit + new_short_position)
                 new_short_position -= order_qty
@@ -327,8 +313,8 @@ class Trader:
             for bid, qty in self.state.order_depths["ORCHIDS"].buy_orders.items():
                 # If bid price facilitates arbitrage
                 if (
-                    conversion_purchase_price < bid
-                    and new_short_position > -position_limit
+                        conversion_purchase_price < bid
+                        and new_short_position > -position_limit
                 ):
                     order_qty = min(qty, position_limit + new_short_position)
                     new_short_position -= order_qty
@@ -373,13 +359,13 @@ class Trader:
 
         # Market make when no immediate arb available
         if (
-            conversion_purchase_price > highest_market_bid
-            and conversion_sell_price < lowest_market_ask
+                conversion_purchase_price > highest_market_bid
+                and conversion_sell_price < lowest_market_ask
         ):
             # placing limit asks @ purchase + 1 and above
             max_iterations = (
-                (position_limit + new_short_position) // size_per_price
-            ) + 1
+                                     (position_limit + new_short_position) // size_per_price
+                             ) + 1
             for i in range(1, max_iterations + 1):
                 if new_short_position > -position_limit:
                     order_qty = min(size_per_price, position_limit + new_short_position)
@@ -390,8 +376,8 @@ class Trader:
 
             # # placing limit bids @ sale - 1 and below
             max_iterations = (
-                (position_limit - new_long_position) // size_per_price
-            ) + 1
+                                     (position_limit - new_long_position) // size_per_price
+                             ) + 1
             for i in range(1, max_iterations + 1):
                 if position_limit > new_long_position:
                     order_qty = min(size_per_price, position_limit - new_long_position)
@@ -399,7 +385,6 @@ class Trader:
                     self.result["ORCHIDS"].append(
                         Order("ORCHIDS", highest_we_would_buy - i, order_qty)
                     )
-
 
     def basket(self):
         # try:
@@ -585,7 +570,6 @@ class Trader:
                     self.result["GIFT_BASKET"] = orders_basket
         # except:
         #     pass
-        
 
 
     def coconuts(self):
@@ -651,31 +635,38 @@ class Trader:
                 raise ValueError("Implied volatility calculation did not converge.")
 
             implied_vol = implied_volatility(market_price, S, K, t, r)
-            self.traderData.accept_implied_vol(implied_vol)
+            implied_vol_historical = self.coco_params['implied_vol_historical']
+            implied_vol_historical = np.append(implied_vol_historical, implied_vol)
+            if len(implied_vol_historical) > 260:
+                implied_vol_historical = implied_vol_historical[1:]
+            self.coco_params['implied_vol_historical'] = implied_vol_historical
 
-            implied_vol_historical = self.traderData.get_implied_vol_historical().sort_values()
-            index = list(implied_vol_historical).index(implied_vol) + 1
-            percentile = index / len(implied_vol_historical)
+            # implied_vol_historical = self.traderData.get_product_price('implied_vol_historical')
+
 
             # coconut_prices = self.coco_params['coconut_prices']
             # coconut_prices = pd.concat([coconut_prices, pd.Series(COCONUT_midpoint)], ignore_index=True)
             # self.coco_params['coconut_prices'] = coconut_prices
-
-            size_per_take_coco = 300
-            size_per_take_coupon = 25
+            #
+            # sixtyfifth_percentile = implied_vol_historical[round(0.9*len(implied_vol_historical))]
+            # fourtyfifth_percentile = implied_vol_historical[round(0.1*len(implied_vol_historical))]
+            #
+            # price_willing_to_sell = round(black_scholes_price(S, K, t, r, sixtyfifth_percentile))
+            # price_willing_to_buy = round(black_scholes_price(S, K, t, r, fourtyfifth_percentile))
 
             if 8000 < self.state.timestamp < 999000:
-                true_vol = stats.mean(self.traderData.get_implied_vol_historical())
+                implied_vol_historical = np.sort(implied_vol_historical)
+                index = np.where(implied_vol_historical == implied_vol)[0][0]
+                percentile = index / len(implied_vol_historical)
+                size_per_take_coupon = round(100 * abs(percentile-50))
+                true_vol = stats.mean(implied_vol_historical)
                 # differenced_coconut_prices = coconut_prices.diff()
                 # true_vol = np.std(differenced_coconut_prices)
 
-                if percentile < 0.4:
+                if percentile < 0.15:
                     """ Signal to long coupons"""
-                    coupon_position_limit = 600 - COCONUT_COUPON_position
-                    coco_position_limit = 300 + COCONUT_position
-
-                    coupon_taken = 0
-                    coco_taken = 0
+                    position_limit = 600 - COCONUT_COUPON_position
+                    taken = 0
                     # For placing an order at best current market taking price
                     # order_quantity = min(-COCONUT_COUPON_asks[0][1], position_limit)
                     # position_limit -= order_quantity
@@ -684,42 +675,25 @@ class Trader:
                     ### For walking the book with market orders up to qty size_per_take
                     for ask in COCONUT_COUPON_asks:
                         # If we have inventory space
-                        if coupon_position_limit > 0:
-                            if coupon_taken < size_per_take_coupon:
-                                order_quantity = min(-ask[1], coupon_position_limit, size_per_take_coupon)
-                                coupon_position_limit -= order_quantity
-                                coupon_taken += order_quantity
+                        if position_limit > 0:
+                            if taken < size_per_take_coupon:
+                                order_quantity = min(-ask[1], position_limit, size_per_take_coupon)
+                                position_limit -= order_quantity
+                                taken += order_quantity
                                 orders_coupon.append(Order('COCONUT_COUPON', ask[0], order_quantity))
-                        else: break
-
-                    for bid in COCONUT_bids:
-                        if coco_position_limit > 0:
-                            if coco_taken < size_per_take_coupon//2:
-                                order_quantity = min(bid[1], coco_position_limit, size_per_take_coupon//2)
-                                coco_position_limit -= order_quantity
-                                coco_taken += order_quantity
-                                orders_coconut.append(Order('COCONUT', COCONUT_bids[0][0], -order_quantity))
-
-
                         else:
                             break
 
                     ### For placing limit order undercutting the book for qty up to size_per_take
-                    if coupon_position_limit > 0:
-                        order_quantity = min(coupon_position_limit, size_per_take_coupon)
-                        coupon_position_limit -= order_quantity
+                    if position_limit > 0:
+                        order_quantity = min(position_limit, size_per_take_coupon)
+                        position_limit -= order_quantity
                         orders_coupon.append(Order('COCONUT_COUPON', best_COCONUT_COUPON_bid + 1, order_quantity))
-                    if coco_position_limit > 0:
-                        order_quantity = min(coco_position_limit, size_per_take_coupon//2)
-                        coco_position_limit -= order_quantity
-                        orders_coconut.append(Order('COCONUT', best_COCONUT_ask - 1, -order_quantity))
 
-                elif percentile > 0.6:
+                elif percentile > 0.85:
                     """ Signal to short coupons """
-                    coupon_position_limit = 600 + COCONUT_COUPON_position
-                    coco_position_limit = 300 + COCONUT_position
-                    coupon_taken = 0
-                    coco_taken = 0
+                    position_limit = 600 + COCONUT_COUPON_position
+                    taken = 0
 
                     ### For placing an order at best current market taking price
                     # order_quantity = min(COCONUT_COUPON_bids[0][1], position_limit)
@@ -729,32 +703,38 @@ class Trader:
                     ### For walking the book with market orders up to qty size_per_take
                     for bid in COCONUT_COUPON_bids:
                         # If we have inventory space
-                        if coupon_position_limit > 0:
-                            if coupon_taken < size_per_take_coupon:
-                                order_quantity = min(bid[1], coupon_position_limit, size_per_take_coupon)
-                                coupon_position_limit -= order_quantity
-                                coupon_taken += order_quantity
+                        if position_limit > 0:
+                            if taken < size_per_take_coupon:
+                                order_quantity = min(bid[1], position_limit, size_per_take_coupon)
+                                position_limit -= order_quantity
+                                taken += order_quantity
                                 orders_coupon.append(Order('COCONUT_COUPON', bid[0], -order_quantity))
-
-                    for ask in COCONUT_asks:
-                        if coco_position_limit > 0:
-                            if coco_taken < size_per_take_coupon//2:
-                                order_quantity = min(-ask[1], coco_position_limit, size_per_take_coupon//2)
-                                coco_position_limit -= order_quantity
-                                coco_taken += order_quantity
-                                orders_coconut.append(Order('COCONUT', ask[0], order_quantity))
-                        
+                        else:
+                            break
 
                     ### For placing limit order undercutting the book for qty up to size_per_take
-                    if coupon_position_limit > 0:
-                        order_quantity = min(coupon_position_limit, size_per_take_coupon)
-                        coupon_position_limit -= order_quantity
+                    if position_limit > 0:
+                        order_quantity = min(position_limit, size_per_take_coupon)
+                        position_limit -= order_quantity
                         orders_coupon.append(Order('COCONUT_COUPON', best_COCONUT_COUPON_ask - 1, -order_quantity))
-                    
-                    if coco_position_limit > 0:
-                        order_quantity = min(coco_position_limit, size_per_take_coupon//2)
-                        coco_position_limit -= order_quantity
-                        orders_coconut.append(Order('COCONUT', best_COCONUT_bid+1, order_quantity))
+
+
+                # else:
+                #     # Place limit orders at prices we are willing to sell and buy at
+                #
+                #     # Long
+                #     position_limit = 600 - COCONUT_COUPON_position
+                #     if position_limit > 0:
+                #         order_quantity = min(position_limit, 10)
+                #         position_limit -= order_quantity
+                #         orders_coupon.append(Order('COCONUT_COUPON', price_willing_to_buy, order_quantity))
+                #
+                #     # Short
+                #     position_limit = 600 + COCONUT_COUPON_position
+                #     if position_limit > 0:
+                #         order_quantity = min(position_limit, 10)
+                #         position_limit -= order_quantity
+                #         orders_coupon.append(Order('COCONUT_COUPON', price_willing_to_sell, -order_quantity))
 
             else:
                 # Emptying out our position slowly before end of day
@@ -798,6 +778,8 @@ class Trader:
             best_bid = bids[0][0]
             best_ask = asks[0][0]
             COCONUT_COUPON_midpoint = (best_ask + best_bid)/2
+        else:
+            return
 
             # Get current position
         curr_pos = self.state.position.get(product, 0)
@@ -807,20 +789,19 @@ class Trader:
         own_trades = self.state.own_trades.get(product, [])
         
         c_person = person
-        if product=='CHOCOLATE':
-            for trade in market_trades:     
-                if trade.buyer==c_person and best_bid != None:
-                    self.result[product].append(Order(product, best_bid, limit-curr_pos))
-                    curr_pos += limit-curr_pos
-                if trade.seller==c_person and best_ask != None:
-                    self.result[product].append(Order(product, best_ask, -limit-curr_pos))
-            for trade in own_trades:
-                if trade.buyer==c_person and best_ask != None:
-                    self.result[product].append(Order(product, best_ask, limit-curr_pos))
-                    curr_pos += limit-curr_pos
-                if trade.seller==c_person and best_bid != None:
-                    self.result[product].append(Order(product, best_ask, -limit-curr_pos))
 
+        for trade in market_trades:     
+            if trade.buyer==c_person:
+                self.result[product].append(Order(product, best_bid, limit-curr_pos))
+                curr_pos += limit-curr_pos
+            if trade.seller==c_person:
+                self.result[product].append(Order(product, best_ask, -limit-curr_pos))
+        for trade in own_trades:
+            if trade.buyer==c_person:
+                self.result[product].append(Order(product, best_ask, limit-curr_pos))
+                curr_pos += limit-curr_pos
+            if trade.seller==c_person:
+                self.result[product].append(Order(product, best_ask, -limit-curr_pos))
 
     def run(self, state: TradingState):
         """
@@ -837,16 +818,13 @@ class Trader:
         # For the orchids' strategy, convert all accrued positions.
         position = 0
         if "ORCHIDS" in state.position:
-           position = state.position["ORCHIDS"]
+            position = state.position["ORCHIDS"]
         self.basket()
+        self.underlying('CHOCOLATE', 'Vladimir')
 
         self.coconuts()
-        self.underlying('CHOCOLATE', 'Vladimir')
-        self.underlying('STRAWBERRIES', 'Vladimir')
-        self.underlying('GIFT_BASKET', 'Rhianna')
-       
-        print(self.state.own_trades)
-        print(self.state.market_trades)
+
+        # print(self.state.observations.conversionObservations)
 
         conversions = -position
         traderData = TraderDataDTO.to_json(self.traderData)
@@ -864,11 +842,11 @@ class Logger:
         self.logs += sep.join(map(str, objects)) + end
 
     def flush(
-        self,
-        state: TradingState,
-        orders: dict[Symbol, list[Order]],
-        conversions: int,
-        trader_data: str,
+            self,
+            state: TradingState,
+            orders: dict[Symbol, list[Order]],
+            conversions: int,
+            trader_data: str,
     ) -> None:
         base_length = len(
             self.to_json(
@@ -923,7 +901,7 @@ class Logger:
         return compressed
 
     def compress_order_depths(
-        self, order_depths: dict[Symbol, OrderDepth]
+            self, order_depths: dict[Symbol, OrderDepth]
     ) -> dict[Symbol, list[Any]]:
         compressed = {}
         for symbol, order_depth in order_depths.items():
